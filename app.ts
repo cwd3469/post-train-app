@@ -1,11 +1,9 @@
-// 타입 알리아스
-type Store = {
+interface Store {
   currentPage: number;
   feeds: NewsFeed[];
 };
 
-//중복 코드 타입알리아스
-type News = {
+interface News  {
   id: number;
   time_ago: string;
   title: string;
@@ -14,17 +12,17 @@ type News = {
   content: string;
 };
 // 이건 인터셉션이라는 타입알리아스의 기능이다. News와 설정된 타입를 합쳐진 형태
-type NewsFeed = News & {
+interface NewsFeed extends News {
   comments_count: number;
   points: number;
   read?: boolean;
 };
 
-type NewsDetail = News & {
+interface NewsDetail extends News  {
   comments: NewsComment[];
 };
 
-type NewsComment = News & {
+interface NewsComment extends News {
   comments: NewsComment[];
   level: number;
 };
@@ -39,11 +37,43 @@ const store: Store = {
   feeds: [],
 };
 
-//이 함수는 다른 url를 받아 같은 공정을 걸쳐서 다른 형태의 값을 리턴헤주기 때문에 함수가 리턴해주는 값은 두가지 유형으로 되어 있다. ex) NewsFeed와 NewsDetail의 타입이 있다.
-//여기서 유니온 타입으로 처리 할 수 있지만 getData를 쓰는 입장에서는 어떤 타입이 나올지 모호해진다.
-// 제네릭은 입력이 n개의 유형일때 출력도 n개의 유형으로 정의 하는것을 의미한다.
-// ex) a입력이면 a 출력으로 C 입력이면 C 출력으로
-// T라는 유형을 입력 했을때 T라는 유형의 출력이 나온다 .여기서  제네릭의 이름은 아무렇게 지을수 있지만 의미 있게 지으면 권장한다.
+function applyApiMixins(targetClass: any , baseClasses: any[]){
+  baseClasses.forEach(baseClass =>{
+    Object.getOwnPropertyNames(baseClass.prototype).forEach(name =>{
+      const descriptor = Object.getOwnPropertyDescriptor(baseClass.prototype, name);
+
+      if(descriptor){
+        Object.defineProperty(targetClass.prototype,name,descriptor)
+      }
+    })
+  })
+}
+
+class Api {
+   getRequest<AjaxResponse>(url:string):AjaxResponse{
+    const ajax = new XMLHttpRequest()
+    ajax.open("GET", url, false);
+    ajax.send(); 
+    return JSON.parse(ajax.response);
+  }
+}
+
+class NewsFeedApi  {
+  getData(id:string):NewsFeed[]{
+    return this.getRequest<NewsFeed[]>(NEWS_URL)
+  }
+}
+
+class NewsDetailApi  {
+  getData(id:string):NewsDetail[]{
+   return this.getRequest<NewsDetail[]>(CONTENT_URL.replace('@id',id))
+  }
+}
+
+applyApiMixins(NewsFeedApi,[Api]);
+applyApiMixins(NewsDetailApi,Api);
+
+
 function getData<AjaxResponse>(url: string): AjaxResponse {
   ajax.open("GET", url, false);
   ajax.send();
@@ -67,6 +97,7 @@ function updateView(html: string): void {
 }
 
 function newsFeed(): void {
+  const api = new NewsFeedApi(NEWS_URL)
   let newsFeed: NewsFeed[] = store.feeds;
   const newsList = [];
   let template = `
@@ -97,7 +128,7 @@ function newsFeed(): void {
   if (newsFeed.length === 0) {
     //여기서 store.feeds의 타입은 NewsFeed인데 getData에서 반환하는 값은  NewsFeed[] 혹은 NewsDetail 이다. 여기서 if else로 처리할수 도 있지만 만약 여려개의 형태 일때는 그렇게 일일히 할수 있는게 아닌 작업이다.
     //
-    newsFeed = store.feeds = makeFeeds(getData<NewsFeed[]>(NEWS_URL));
+    newsFeed = store.feeds = makeFeeds(api.getData<NewsFeed[]>(NEWS_URL));
   }
 
   for (let i = (store.currentPage - 1) * 10; i < store.currentPage * 10; i++) {
@@ -131,7 +162,8 @@ function newsFeed(): void {
 
 function newsDetail(): void {
   const id = location.hash.substr(7);
-  const newsContent = getData<NewsDetail>(CONTENT_URL.replace("@id", id));
+  const api = new NewsDetailApi(CONTENT_URL.replace("@id", id))
+  const newsContent = api.getData()
   let template = `
     <div class="bg-gray-600 min-h-screen pb-8">
       <div class="bg-white text-xl">
